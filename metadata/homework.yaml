@@ -1,0 +1,81 @@
+# Default metadata for the homework template.
+# A Markdown YAML header can override any field in this file.
+
+documentclass: article
+fontsize: 11pt
+papersize: a4
+title-details-font-size: normalsize
+title-details-italic-slant: 0.20
+geometry:
+  - top=30mm
+  - bottom=30mm
+  - left=30mm
+  - right=30mm
+
+numbersections: false
+secnumdepth: 5
+toc: false
+toc-depth: 2
+toc-title: "目录"
+toc-linestretch: 1.30
+
+# 0: no centered headings
+# 1: center level-1 headings only
+# 2: center level-1 and level-2 headings
+# 3: center level-1 through level-3 headings
+center-heading-depth: 1
+
+mainfont: "TeX Gyre Termes"
+sansfont: "TeX Gyre Heros"
+monofont: "Latin Modern Mono"
+CJKmainfont: "FandolSong-Regular"
+CJKsansfont: "FandolHei-Regular"
+CJKmonofont: "FandolFang-Regular"
+mathfont: "Latin Modern Math"
+
+linestretch: 1.30
+colorlinks: false
+
+# Code block frame.
+code-background: "F8F8F8"
+code-border-color: "D2D2D2"
+code-border-width: 0.5pt
+code-border-radius: 5pt
+code-padding-x: 8pt
+code-padding-y: 6pt
+code-block-spacing: 1.2em
+
+# Block quotes.
+quote-border-color: "808080"
+quote-background: "F7F7F7"
+quote-border-width: 2pt
+quote-padding-x: 10pt
+quote-padding-y: 6pt
+quote-block-spacing: 0.8em
+
+# Inline code.
+inline-code-border-color: "A6A6A6"
+inline-code-border-width: 0.4pt
+inline-code-border-radius: 1pt
+inline-code-padding-x: 2pt
+inline-code-padding-y: 2pt
+
+# Figure and table captions.
+caption-font-size: small
+caption-font-family: "FandolFang-Regular"
+caption-label-weight: md
+caption-figure-name: "图"
+caption-table-name: "表"
+caption-label-separator: space
+
+# Single-row image groups.
+image-row-full-count: 3
+image-row-scale: 1
+image-row-gap-ratio: 0.04
+image-row-max-height: 60mm
+
+# Grid tables.
+table-rule-width: 0.35pt
+table-header-rule-gap: 1.2pt
+table-padding-x: 10pt
+table-row-stretch: 1.30

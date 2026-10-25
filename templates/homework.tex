@@ -1,0 +1,789 @@
+$document-metadata.latex()$
+$passoptions.latex()$
+\documentclass[
+$for(babel-otherlangs)$
+  $babel-otherlangs$,
+$endfor$
+$if(babel-lang)$
+  $babel-lang$,
+$endif$
+$if(fontsize)$
+  $fontsize$,
+$endif$
+$if(papersize)$
+  $papersize$paper,
+$endif$
+$for(classoption)$
+  $classoption$$sep$,
+$endfor$
+]{$documentclass$}
+
+$if(beamerarticle)$
+\usepackage{beamerarticle} % needs to be loaded first
+$endif$
+
+\usepackage{xcolor}
+$if(geometry)$
+\usepackage[$for(geometry)$$geometry$$sep$,$endfor$]{geometry}
+$endif$
+\usepackage{amsmath,amssymb}
+$if(cancel)$
+\usepackage{cancel}
+$endif$
+
+$--
+$-- section numbering
+$--
+$if(numbersections)$
+\setcounter{secnumdepth}{$secnumdepth$}
+$else$
+\setcounter{secnumdepth}{-\maxdimen}
+$endif$
+
+$fonts.latex()$
+$font-settings.latex()$
+$common.latex()$
+
+$for(header-includes)$
+$header-includes$
+$endfor$
+$after-header-includes.latex()$
+$hypersetup.latex()$
+
+$--
+$-- engineering-homework visual layer
+$--
+\usepackage{titlesec}
+\usepackage{titling}
+\usepackage{etoolbox}
+\usepackage{fvextra}
+\usepackage[framemethod=tikz]{mdframed}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hhline}
+\usepackage{xparse}
+\usepackage{caption}
+
+% Keep title-detail italics in the main CJK font, using a synthetic slant
+% because the default CJK roman font has no native italic face.
+\newCJKfontfamily\TitleDetailsItalicCJK[
+  AutoFakeSlant=$title-details-italic-slant$
+]{$CJKmainfont$}
+
+% Simple body typography.
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+
+% Figure and table captions: smaller FangSong text with a regular label.
+\newfontfamily\CaptionLatinFont{$caption-font-family$}
+\newCJKfontfamily\CaptionCJKFont{$caption-font-family$}
+\DeclareCaptionFont{captionfamily}{\CaptionLatinFont\CaptionCJKFont}
+\DeclareCaptionLabelFormat{homework}{#1\kern0pt#2}
+\captionsetup{
+  font={$caption-font-size$,captionfamily},
+  labelfont=$caption-label-weight$,
+  labelformat=homework,
+  labelsep=$caption-label-separator$
+}
+\captionsetup[figure]{name=$caption-figure-name$}
+\captionsetup[table]{name=$caption-table-name$}
+
+% Explicit single-row image groups. A group consumes one figure number only
+% when it has a group caption or at least one child caption; numbered child
+% images then use figure-subfigure numbering such as 4-1 and 4-2.
+\newcounter{homeworksubfigure}[figure]
+\renewcommand{\thehomeworksubfigure}{\thefigure-\arabic{homeworksubfigure}}
+\newcommand{\HomeworkImageRowDefaultFullCount}{$image-row-full-count$}
+\newcommand{\HomeworkImageRowDefaultScale}{$image-row-scale$}
+\newcommand{\HomeworkImageRowDefaultGapRatio}{$image-row-gap-ratio$}
+\newcommand{\HomeworkImageRowDefaultMaxHeight}{$image-row-max-height$}
+\newcommand{\HomeworkCaptionSeparator}{\space}
+
+\ExplSyntaxOn
+\seq_new:N \l_homework_image_row_items_seq
+\int_new:N \l_homework_image_row_count_int
+\fp_new:N \l_homework_image_row_scale_fp
+\fp_new:N \l_homework_image_row_gap_ratio_fp
+\dim_new:N \l_homework_image_row_target_dim
+\dim_new:N \l_homework_image_row_image_area_dim
+\dim_new:N \l_homework_image_row_ratio_sum_dim
+\dim_new:N \l_homework_image_row_height_dim
+\dim_new:N \l_homework_image_row_max_height_dim
+\dim_new:N \l_homework_image_row_gap_dim
+\dim_new:N \l_homework_image_row_item_width_dim
+\box_new:N \l_homework_image_row_measure_box
+\bool_new:N \l_homework_image_row_numbered_bool
+
+\cs_new_protected:Npn \homework_image_row_item:nnn #1#2#3
+  {
+    \seq_put_right:Nn \l_homework_image_row_items_seq
+      { \homework_image_row_item_data:nnn {#1}{#2}{#3} }
+    \tl_if_blank:nF {#3}
+      { \bool_set_true:N \l_homework_image_row_numbered_bool }
+  }
+
+\cs_new_protected:Npn \homework_image_row_item_data:nnn #1#2#3 { }
+
+\cs_new_protected:Npn \homework_image_row_measure_item:nnn #1#2#3
+  {
+    \hbox_set:Nn \l_homework_image_row_measure_box
+      { \includegraphics[height=1pt,keepaspectratio]{#1} }
+    \dim_add:Nn \l_homework_image_row_ratio_sum_dim
+      { \box_wd:N \l_homework_image_row_measure_box }
+  }
+
+\cs_new_protected:Npn \homework_image_row_render_item:nnn #1#2#3
+  {
+    \hbox_set:Nn \l_homework_image_row_measure_box
+      {
+        \includegraphics[
+          height=\dim_use:N \l_homework_image_row_height_dim,
+          keepaspectratio
+        ]{#1}
+      }
+    \dim_set:Nn \l_homework_image_row_item_width_dim
+      { \box_wd:N \l_homework_image_row_measure_box }
+    \begin{minipage}[t]{\dim_use:N \l_homework_image_row_item_width_dim}
+      \centering
+      \vspace{0pt}
+      \box_use_drop:N \l_homework_image_row_measure_box
+      \par\vspace{0.35em}
+      {\csname $caption-font-size$\endcsname
+       \CaptionLatinFont\CaptionCJKFont
+       {\csname $caption-label-weight$series\endcsname
+        $caption-figure-name$\kern0pt\thehomeworksubfigure}
+       \tl_if_blank:nF {#3} {\HomeworkCaptionSeparator #3}
+       \par}
+      \tl_if_blank:nF {#2} {\label{#2}}
+    \end{minipage}
+  }
+
+\cs_new_protected:Npn \homework_image_row_render_bare_item:nnn #1#2#3
+  {
+    \hbox_set:Nn \l_homework_image_row_measure_box
+      {
+        \includegraphics[
+          height=\dim_use:N \l_homework_image_row_height_dim,
+          keepaspectratio
+        ]{#1}
+      }
+    \dim_set:Nn \l_homework_image_row_item_width_dim
+      { \box_wd:N \l_homework_image_row_measure_box }
+    \begin{minipage}[t]{\dim_use:N \l_homework_image_row_item_width_dim}
+      \centering
+      \vspace{0pt}
+      \box_use_drop:N \l_homework_image_row_measure_box
+    \end{minipage}
+  }
+
+\cs_new_protected:Npn \homework_image_row:nnnnnn #1#2#3#4#5#6
+  {
+    \par\addvspace{1em}
+    \noindent
+    \begin{minipage}{\linewidth}
+      \centering
+      \seq_clear:N \l_homework_image_row_items_seq
+      \bool_set_false:N \l_homework_image_row_numbered_bool
+      \tl_if_blank:nF {#5}
+        { \bool_set_true:N \l_homework_image_row_numbered_bool }
+      #6
+      \int_set:Nn \l_homework_image_row_count_int
+        { \seq_count:N \l_homework_image_row_items_seq }
+
+      \fp_set:Nn \l_homework_image_row_scale_fp
+        { \tl_if_blank:nTF {#1} {\HomeworkImageRowDefaultScale} {#1} }
+      \fp_set:Nn \l_homework_image_row_gap_ratio_fp
+        { \tl_if_blank:nTF {#2} {\HomeworkImageRowDefaultGapRatio} {#2} }
+      \dim_set:Nn \l_homework_image_row_max_height_dim
+        { \tl_if_blank:nTF {#3} {\HomeworkImageRowDefaultMaxHeight} {#3} }
+
+      \dim_set:Nn \l_homework_image_row_target_dim
+        {
+          \fp_to_dim:n
+            {
+              min(
+                1,
+                \l_homework_image_row_scale_fp *
+                \l_homework_image_row_count_int /
+                \HomeworkImageRowDefaultFullCount
+              ) * \dim_to_fp:n {\linewidth}
+            }
+        }
+
+      \dim_set:Nn \l_homework_image_row_image_area_dim
+        {
+          \fp_to_dim:n
+            {
+              (1 - \l_homework_image_row_gap_ratio_fp) *
+              \dim_to_fp:n {\l_homework_image_row_target_dim}
+            }
+        }
+
+      \int_compare:nNnTF {\l_homework_image_row_count_int} > {1}
+        {
+          \dim_set:Nn \l_homework_image_row_gap_dim
+            {
+              \fp_to_dim:n
+                {
+                  \l_homework_image_row_gap_ratio_fp *
+                  \dim_to_fp:n {\l_homework_image_row_target_dim} /
+                  (\l_homework_image_row_count_int - 1)
+                }
+            }
+        }
+        { \dim_zero:N \l_homework_image_row_gap_dim }
+
+      \dim_zero:N \l_homework_image_row_ratio_sum_dim
+      \cs_set_eq:NN
+        \homework_image_row_item_data:nnn
+        \homework_image_row_measure_item:nnn
+      \seq_map_inline:Nn \l_homework_image_row_items_seq {##1}
+
+      \dim_set:Nn \l_homework_image_row_height_dim
+        {
+          \fp_to_dim:n
+            {
+              \dim_to_fp:n {\l_homework_image_row_image_area_dim} /
+              \dim_to_fp:n {\l_homework_image_row_ratio_sum_dim}
+            }
+        }
+      \dim_compare:nNnT
+        {\l_homework_image_row_height_dim} > {\l_homework_image_row_max_height_dim}
+        {
+          \dim_set_eq:NN
+            \l_homework_image_row_height_dim
+            \l_homework_image_row_max_height_dim
+        }
+
+      \bool_if:NTF \l_homework_image_row_numbered_bool
+        {
+          \refstepcounter{figure}
+          \setcounter{homeworksubfigure}{0}
+          \tl_if_blank:nF {#4} {\label{#4}}
+          \cs_set_eq:NN
+            \homework_image_row_item_data:nnn
+            \homework_image_row_render_item:nnn
+        }
+        {
+          \cs_set_eq:NN
+            \homework_image_row_item_data:nnn
+            \homework_image_row_render_bare_item:nnn
+        }
+
+      \makebox[\linewidth][c]{\hbox{
+        \seq_map_indexed_inline:Nn \l_homework_image_row_items_seq
+          {
+            \bool_if:NT \l_homework_image_row_numbered_bool
+              { \refstepcounter{homeworksubfigure} }
+            ##2
+            \int_compare:nNnT {##1} < {\l_homework_image_row_count_int}
+              { \hspace{\dim_use:N \l_homework_image_row_gap_dim} }
+          }
+      }}
+
+      \tl_if_blank:nF {#5}
+        {
+          \par\vspace{\abovecaptionskip}
+          {\csname $caption-font-size$\endcsname
+           \CaptionLatinFont\CaptionCJKFont
+           {\csname $caption-label-weight$series\endcsname
+            $caption-figure-name$\kern0pt\thefigure}
+           \HomeworkCaptionSeparator #5\par}
+          \addcontentsline{lof}{figure}
+            {\protect\numberline{\thefigure}#5}
+        }
+    \end{minipage}
+    \par\addvspace{1em}
+  }
+
+\NewDocumentCommand{\HomeworkImageRowItem}{m m m}
+  { \homework_image_row_item:nnn {#1}{#2}{#3} }
+\NewDocumentCommand{\HomeworkImageRow}{m m m m m m}
+  { \homework_image_row:nnnnnn {#1}{#2}{#3}{#4}{#5}{#6} }
+\ExplSyntaxOff
+
+% Main title style.
+\pretitle{\begin{center}\huge\bfseries}
+\posttitle{\par\end{center}\vskip 0.5em}
+\preauthor{}
+\postauthor{}
+\predate{}
+\postdate{}
+
+% Heading spacing.
+\titlespacing*{\section}{0pt}{1.5ex plus .4ex minus .2ex}{0.8ex}
+\titlespacing*{\subsection}{0pt}{1.2ex plus .3ex minus .2ex}{0.6ex}
+\titlespacing*{\subsubsection}{0pt}{1.0ex plus .2ex minus .2ex}{0.5ex}
+
+% Heading centering depth:
+% 0 = none
+% 1 = section
+% 2 = section + subsection
+% 3 = section + subsection + subsubsection
+\ifnum$center-heading-depth$>0
+  \titleformat{\section}
+    {\normalfont\Large\bfseries\centering}
+    {\thesection}{1em}{}
+\fi
+
+\ifnum$center-heading-depth$>1
+  \titleformat{\subsection}
+    {\normalfont\large\bfseries\centering}
+    {\thesubsection}{1em}{}
+\fi
+
+\ifnum$center-heading-depth$>2
+  \titleformat{\subsubsection}
+    {\normalfont\normalsize\bfseries\centering}
+    {\thesubsubsection}{1em}{}
+\fi
+
+% Code blocks: light background, thin border, compact monospaced text.
+\definecolor{CodeBackground}{HTML}{$code-background$}
+\definecolor{CodeBorder}{HTML}{$code-border-color$}
+
+\mdfdefinestyle{CodeBlock}{
+  backgroundcolor=CodeBackground,
+  linecolor=CodeBorder,
+  linewidth=$code-border-width$,
+  roundcorner=$code-border-radius$,
+  innerleftmargin=$code-padding-x$,
+  innerrightmargin=$code-padding-x$,
+  innertopmargin=$code-padding-y$,
+  innerbottommargin=$code-padding-y$,
+  skipabove=$code-block-spacing$,
+  skipbelow=$code-block-spacing$
+}
+
+$if(highlighting-macros)$
+\renewenvironment{Shaded}
+  {\begin{mdframed}[style=CodeBlock]}
+  {\end{mdframed}}
+
+\RecustomVerbatimEnvironment{Highlighting}{Verbatim}{
+  commandchars=\\\{\},
+  fontsize=\small,
+  breaklines=true,
+  breakanywhere=true
+}
+$endif$
+
+% Plain fenced code blocks (without a language tag) also receive a frame.
+\BeforeBeginEnvironment{verbatim}{%
+  \begin{mdframed}[style=CodeBlock]%
+}
+
+\AfterEndEnvironment{verbatim}{\end{mdframed}}
+
+% Block quotes: a clear left rule without a filled background.
+\definecolor{QuoteBorder}{HTML}{$quote-border-color$}
+\definecolor{QuoteBackground}{HTML}{$quote-background$}
+\mdfdefinestyle{QuoteBlock}{
+  backgroundcolor=QuoteBackground,
+  linecolor=QuoteBorder,
+  linewidth=$quote-border-width$,
+  topline=false,
+  rightline=false,
+  bottomline=false,
+  innerleftmargin=$quote-padding-x$,
+  innerrightmargin=$quote-padding-x$,
+  innertopmargin=$quote-padding-y$,
+  innerbottommargin=$quote-padding-y$,
+  skipabove=$quote-block-spacing$,
+  skipbelow=$quote-block-spacing$
+}
+
+\renewenvironment{quote}
+  {\begin{mdframed}[style=QuoteBlock]\setlength{\parindent}{0pt}}
+  {\end{mdframed}}
+
+% Inline code: a transparent rounded frame around monospaced text.
+\definecolor{InlineCodeBorder}{HTML}{$inline-code-border-color$}
+\let\PandocOriginalTexttt\texttt
+\NewDocumentCommand{\HomeworkInlineCodeBox}{m}{%
+  \tikz[baseline=(InlineCode.base)]{%
+    \node[
+      draw=InlineCodeBorder,
+      line width=$inline-code-border-width$,
+      rounded corners=$inline-code-border-radius$,
+      inner xsep=$inline-code-padding-x$,
+      inner ysep=$inline-code-padding-y$,
+      outer sep=0pt
+    ] (InlineCode) {\PandocOriginalTexttt{#1}};%
+  }%
+}
+
+% Code that fits within a full text line uses the original single-node style.
+% Wider code is assembled greedily from natural chunks. Each resulting line
+% is an independent node with the same border, radius, and padding settings.
+\ExplSyntaxOn
+\tl_new:N \l__homework_inline_code_accum_tl
+\tl_new:N \l__homework_inline_code_candidate_tl
+\seq_new:N \l__homework_inline_code_fragments_seq
+\box_new:N \l__homework_inline_code_measure_box
+
+\cs_new_protected:Npn \homework_inline_code_measure:n #1
+  {
+    \hbox_set:Nn \l__homework_inline_code_measure_box
+      { \HomeworkInlineCodeBox{#1} }
+  }
+
+\cs_new_protected:Npn \homework_inline_code_flush:
+  {
+    \tl_if_empty:NF \l__homework_inline_code_accum_tl
+      {
+        \seq_put_right:NV \l__homework_inline_code_fragments_seq
+          \l__homework_inline_code_accum_tl
+        \tl_clear:N \l__homework_inline_code_accum_tl
+      }
+  }
+
+\cs_new_protected:Npn \homework_inline_code_add_char:n #1
+  {
+    \tl_set:NV \l__homework_inline_code_candidate_tl
+      \l__homework_inline_code_accum_tl
+    \tl_put_right:Nn \l__homework_inline_code_candidate_tl {#1}
+    \homework_inline_code_measure:n
+      { \tl_use:N \l__homework_inline_code_candidate_tl }
+    \dim_compare:nNnTF
+      { \box_wd:N \l__homework_inline_code_measure_box }
+      > { \linewidth }
+      {
+        \homework_inline_code_flush:
+        \tl_set:Nn \l__homework_inline_code_accum_tl {#1}
+      }
+      {
+        \tl_set:NV \l__homework_inline_code_accum_tl
+          \l__homework_inline_code_candidate_tl
+      }
+  }
+
+\cs_new_protected:Npn \homework_inline_code_add_chunk:nn #1#2
+  {
+    \homework_inline_code_measure:n {#1}
+    \dim_compare:nNnTF
+      { \box_wd:N \l__homework_inline_code_measure_box }
+      > { \linewidth }
+      {
+        \homework_inline_code_flush:
+        #2
+      }
+      {
+        \tl_set:NV \l__homework_inline_code_candidate_tl
+          \l__homework_inline_code_accum_tl
+        \tl_put_right:Nn \l__homework_inline_code_candidate_tl {#1}
+        \homework_inline_code_measure:n
+          { \tl_use:N \l__homework_inline_code_candidate_tl }
+        \dim_compare:nNnTF
+          { \box_wd:N \l__homework_inline_code_measure_box }
+          > { \linewidth }
+          {
+            \homework_inline_code_flush:
+            \tl_set:Nn \l__homework_inline_code_accum_tl {#1}
+          }
+          {
+            \tl_set:NV \l__homework_inline_code_accum_tl
+              \l__homework_inline_code_candidate_tl
+          }
+      }
+  }
+
+\cs_new_protected:Npn \homework_inline_code_output:
+  {
+    \unskip\hfil\break
+    \seq_map_indexed_inline:Nn \l__homework_inline_code_fragments_seq
+      {
+        \int_compare:nNnF {##1} = {1} { \hfil\break }
+        \HomeworkInlineCodeBox{##2}
+      }
+  }
+
+\NewDocumentCommand{\HomeworkInlineCodeChar}{m}
+  { \homework_inline_code_add_char:n {#1} }
+
+\NewDocumentCommand{\HomeworkInlineCodeChunk}{m m}
+  { \homework_inline_code_add_chunk:nn {#1} {#2} }
+
+\NewDocumentCommand{\HomeworkInlineCode}{m m}
+  {
+    \homework_inline_code_measure:n {#1}
+    \dim_compare:nNnTF
+      { \box_wd:N \l__homework_inline_code_measure_box }
+      > { \linewidth }
+      {
+        \tl_clear:N \l__homework_inline_code_accum_tl
+        \seq_clear:N \l__homework_inline_code_fragments_seq
+        #2
+        \homework_inline_code_flush:
+        \homework_inline_code_output:
+      }
+      { \HomeworkInlineCodeBox{#1} }
+  }
+\ExplSyntaxOff
+
+% White grid tables: double rules around the header, thin rules elsewhere.
+\setlength{\arrayrulewidth}{$table-rule-width$}
+\setlength{\doublerulesep}{$table-header-rule-gap$}
+\setlength{\tabcolsep}{$table-padding-x$}
+\renewcommand{\arraystretch}{$table-row-stretch$}
+
+\let\PandocLongtable\longtable
+\let\endPandocLongtable\endlongtable
+
+\ExplSyntaxOn
+\tl_new:N \l__homework_colspec_tl
+
+\cs_new_protected:Npn \homework_longtable_apply:nn #1#2
+  { \PandocLongtable[#1]{#2} }
+
+\cs_new_protected:Npn \homework_prepare_colspec:n #1
+  {
+    \tl_set:Nn \l__homework_colspec_tl {#1}
+    \regex_replace_all:nnN {@\{\}} {} \l__homework_colspec_tl
+    \tl_replace_all:Nnn \l__homework_colspec_tl {p} {m}
+    \tl_if_in:NnTF \l__homework_colspec_tl {>}
+      { \tl_replace_all:Nnn \l__homework_colspec_tl {>} {|>} }
+      { \regex_replace_all:nnN {([lcrmbX])} {|\1} \l__homework_colspec_tl }
+    \tl_put_right:Nn \l__homework_colspec_tl {|}
+    % Align longtable's left border with the hhline grid.
+    \tl_put_left:Nn \l__homework_colspec_tl
+      {@{\hspace{\dimexpr2\doublerulesep+\arrayrulewidth\relax}}}
+    \tl_put_right:Nn \l__homework_colspec_tl {@{}}
+  }
+
+\cs_new_protected:Npn \homework_begin_longtable:nn #1#2
+  {
+    \homework_prepare_colspec:n {#2}
+    \exp_args:NnV \homework_longtable_apply:nn {#1}
+      \l__homework_colspec_tl
+  }
+
+\cs_new_eq:NN \HomeworkBeginLongtable \homework_begin_longtable:nn
+\ExplSyntaxOff
+
+\RenewDocumentEnvironment{longtable}{O{c} m}{%
+  \let\HomeworkDocumentRowBreak\\%
+  \let\HomeworkDocumentTabularNewline\tabularnewline
+  \HomeworkBeginLongtable{#1}{#2}%
+}{%
+  \endPandocLongtable
+  \global\let\\\HomeworkDocumentRowBreak
+  \global\let\tabularnewline\HomeworkDocumentTabularNewline
+}
+
+\makeatletter
+\newcommand{\HomeworkDoubleTableRule}{\hhline{|*{\LT@cols}{=|}}}
+\newcommand{\HomeworkThinTableRule}{\hhline{|*{\LT@cols}{-|}}}
+\let\HomeworkOriginalTableRowBreak\LT@tabularcr
+
+% Mark both sides of a page break in a long table. Pandoc already repeats
+% the column headings; these rows only tell the reader that the table
+% continues from or onto another page.
+\newcommand{\HomeworkContinuedTableHeader}{%
+  \multicolumn{\LT@cols}{c}{%
+    \small\CaptionLatinFont\CaptionCJKFont
+    $caption-table-name$\thetable（续）%
+  }\HomeworkOriginalTableRowBreak
+}
+\newcommand{\HomeworkContinuedTableFooter}{%
+  \multicolumn{\LT@cols}{r}{%
+    \small\CaptionLatinFont\CaptionCJKFont
+    （下页续）%
+  }\HomeworkOriginalTableRowBreak
+}
+
+\let\HomeworkOriginalEndFirstHead\endfirsthead
+\renewcommand{\endfirsthead}{%
+  \HomeworkOriginalEndFirstHead
+  \HomeworkContinuedTableHeader
+}
+
+\let\HomeworkOriginalEndHead\endhead
+\renewcommand{\endhead}{%
+  \HomeworkOriginalEndHead
+  \HomeworkContinuedTableFooter
+  \endfoot
+}
+
+\renewcommand{\toprule}{%
+  \HomeworkDoubleTableRule
+  \noalign{%
+    \global\let\\\HomeworkOriginalTableRowBreak
+    \global\let\tabularnewline\\%
+  }%
+}
+\renewcommand{\midrule}{%
+  \HomeworkDoubleTableRule
+  \noalign{%
+    \global\protected\def\\{%
+      \HomeworkOriginalTableRowBreak\HomeworkThinTableRule
+    }%
+    \global\let\tabularnewline\\%
+  }%
+}
+\renewcommand{\bottomrule}{}
+\makeatother
+
+$if(pdf-trailer-id)$
+\ifXeTeX
+\special{pdf:trailerid [ $pdf-trailer-id$ ]}
+\fi
+
+\ifPDFTeX
+\pdftrailerid{}
+\pdftrailer{/ID [ $pdf-trailer-id$ ]}
+\fi
+
+\ifLuaTeX
+\pdfvariable trailerid {[ $pdf-trailer-id$ ]}
+\fi
+$endif$
+
+$if(title)$
+\title{$title$$if(thanks)$\thanks{$thanks$}$endif$}
+$endif$
+
+$if(subtitle)$
+\makeatletter
+\providecommand{\subtitle}[1]{%
+  \apptocmd{\@title}{%
+    \par
+    \vspace{0.4em}
+    {\large\normalfont #1\par}%
+  }{}{}
+}
+\makeatother
+
+\subtitle{$subtitle$}
+$endif$
+
+$if(title)$
+$if(title-details)$
+\makeatletter
+\apptocmd{\@title}{%
+$for(title-details)$
+  \par
+  \vspace{0.2em}
+  {\normalfont
+   \csname $if(title-details.size)$$title-details.size$$else$$title-details-font-size$$endif$\endcsname
+$if(title-details.bold)$
+   \bfseries
+$endif$
+$if(title-details.italic)$
+   \itshape\TitleDetailsItalicCJK
+$endif$
+$if(title-details.underline)$
+   \underline{%
+$endif$
+$if(title-details.text)$
+   $title-details.text$
+$else$
+   $title-details$
+$endif$
+$if(title-details.underline)$
+   }%
+$endif$
+   \par}%
+$endfor$
+}{}{}
+\makeatother
+$endif$
+$endif$
+
+\author{}
+\date{}
+
+\begin{document}
+
+% No decorative header/footer; only a centered Arabic page number.
+\pagestyle{plain}
+\pagenumbering{arabic}
+
+$if(has-frontmatter)$
+\frontmatter
+$endif$
+
+$if(title)$
+\maketitle
+
+$if(abstract)$
+\begin{abstract}
+  $abstract$
+\end{abstract}
+$endif$
+$endif$
+
+$for(include-before)$
+$include-before$
+$endfor$
+
+$if(toc)$
+$if(toc-title)$
+\renewcommand*\contentsname{$toc-title$}
+$endif$
+
+{
+  $if(colorlinks)$
+  $if(toccolor)$
+  \hypersetup{linkcolor=$toccolor$}
+  $endif$
+  $endif$
+
+  \setcounter{tocdepth}{$toc-depth$}
+  \setstretch{$toc-linestretch$}
+  \tableofcontents
+}
+$endif$
+
+$if(lof)$
+\listoffigures
+$endif$
+
+$if(lot)$
+\listoftables
+$endif$
+
+% Body line spacing.
+\setstretch{$linestretch$}
+
+$if(has-frontmatter)$
+\mainmatter
+$endif$
+
+$body$
+
+$if(has-frontmatter)$
+\backmatter
+$endif$
+
+$if(nocite-ids)$
+\nocite{$for(nocite-ids)$$it$$sep$, $endfor$}
+$endif$
+
+$if(natbib)$
+$if(bibliography)$
+$if(biblio-title)$
+
+$if(has-chapters)$
+\renewcommand\bibname{$biblio-title$}
+$else$
+\renewcommand\refname{$biblio-title$}
+$endif$
+
+$endif$
+
+\bibliography{$for(bibliography)$$bibliography$$sep$,$endfor$}
+$endif$
+$endif$
+
+$if(biblatex)$
+\printbibliography$if(biblio-title)$[title=$biblio-title$]$endif$
+$endif$
+
+$for(include-after)$
+$include-after$
+$endfor$
+
+\end{document}

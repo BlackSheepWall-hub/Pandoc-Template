@@ -1,0 +1,14 @@
+# Pandoc defaults file for homework.
+
+from: markdown
+to: pdf
+pdf-engine: xelatex
+template: homework.tex
+metadata-files:
+  - ${USERDATA}/metadata/homework.yaml
+filters:
+  - ${USERDATA}/filters/image-row.lua
+  - ${USERDATA}/filters/inline-code.lua
+
+highlight-style: tango
+standalone: true
