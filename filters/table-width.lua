@@ -14,8 +14,6 @@ local maximum_unbroken_text_width = 12
 local emergency_break_safety = 0.8
 local header_line_target = 2
 local body_line_target = 3
-local overflow_policy = "landscape"
-local overflow_failure = "error"
 local measured_table_counter = 0
 local default_image_width_marker = "data-homework-default-width"
 
@@ -143,22 +141,6 @@ local function cell_atomic_width(cell)
   return widest
 end
 
-local function table_label(table_element)
-  local caption = pandoc.utils.stringify(table_element.caption)
-  if caption and caption ~= "" then
-    return "table '" .. caption .. "'"
-  end
-  return "an uncaptained table"
-end
-
-local function sum_widths(widths)
-  local total = 0
-  for _, width in ipairs(widths) do
-    total = total + width
-  end
-  return total
-end
-
 local function ensure_span_width(widths, first, last, required)
   local current = 0
   for index = first, last do
@@ -177,169 +159,54 @@ local function ensure_span_width(widths, first, last, required)
   end
 end
 
-local function add_natural_rows(rows, widths)
+local function table_overhead(column_count)
+  -- Convert the nominal character budget to a content-only budget. TeX later
+  -- replaces this estimate with exact padding and rule dimensions.
+  return 2 * column_count + (column_count + 1)
+end
+
+local function cell_minimum_width(cell)
+  local natural = display_width(pandoc.utils.stringify(cell.contents))
+  if natural <= 0 then
+    return 1
+  end
+
+  return math.max(
+    1,
+    math.min(natural, cell_atomic_width(cell))
+  )
+end
+
+local function add_minimum_rows(rows, minimums)
   for _, row in ipairs(rows) do
     local column = 1
     for _, cell in ipairs(row.cells) do
       local span = math.max(1, cell.col_span or 1)
-      local last = math.min(#widths, column + span - 1)
+      local last = math.min(#minimums, column + span - 1)
       ensure_span_width(
-        widths,
+        minimums,
         column,
         last,
-        display_width(pandoc.utils.stringify(cell.contents))
+        cell_minimum_width(cell)
       )
       column = column + span
     end
   end
 end
 
-local function measured_column_widths(table_element)
-  local widths = {}
-  for index = 1, #table_element.colspecs do
-    widths[index] = 1
-  end
-
-  add_natural_rows(table_element.head.rows, widths)
-  for _, body in ipairs(table_element.bodies) do
-    add_natural_rows(body.head, widths)
-    add_natural_rows(body.body, widths)
-  end
-  add_natural_rows(table_element.foot.rows, widths)
-  return widths
-end
-
-local function table_overhead(column_count)
-  -- Compatibility estimate: roughly two text columns of padding per table
-  -- column and one for each vertical rule, including the outer borders.
-  return 2 * column_count + (column_count + 1)
-end
-
-local function natural_table_width(table_element)
-  local widths = measured_column_widths(table_element)
-  return sum_widths(widths) + table_overhead(#widths)
-end
-
-local function table_has_image(table_element)
-  local found = false
-  local function inspect_rows(rows)
-    for _, row in ipairs(rows) do
-      for _, cell in ipairs(row.cells) do
-        for _, block in ipairs(cell.contents) do
-          pandoc.walk_block(block, {
-            Image = function(_)
-              found = true
-            end,
-          })
-        end
-      end
-    end
-  end
-
-  inspect_rows(table_element.head.rows)
-  for _, body in ipairs(table_element.bodies) do
-    inspect_rows(body.head)
-    inspect_rows(body.body)
-  end
-  inspect_rows(table_element.foot.rows)
-  return found
-end
-
-local function cell_width_requirements(cell, line_target)
-  local natural = display_width(pandoc.utils.stringify(cell.contents))
-  if natural <= 0 then
-    return 1, 1
-  end
-
-  local hard_minimum = math.max(
-    1,
-    math.min(natural, cell_atomic_width(cell))
-  )
-  local preferred = math.min(
-    natural,
-    math.max(
-      minimum_wrapped_column_width,
-      hard_minimum,
-      math.ceil(natural / line_target) + 1
-    )
-  )
-  return preferred, hard_minimum
-end
-
-local function add_wrapped_rows(rows, preferred, minimums, line_target)
-  for _, row in ipairs(rows) do
-    local column = 1
-    for _, cell in ipairs(row.cells) do
-      local span = math.max(1, cell.col_span or 1)
-      local last = math.min(#preferred, column + span - 1)
-      local required, hard_minimum = cell_width_requirements(cell, line_target)
-      ensure_span_width(minimums, column, last, hard_minimum)
-      ensure_span_width(preferred, column, last, required)
-      column = column + span
-    end
-  end
-end
-
-local function wrapped_column_widths(table_element)
-  local preferred = {}
+local function minimum_column_widths(table_element)
   local minimums = {}
   for index = 1, #table_element.colspecs do
-    preferred[index] = minimum_wrapped_column_width
     minimums[index] = minimum_wrapped_column_width
   end
 
-  add_wrapped_rows(
-    table_element.head.rows,
-    preferred,
-    minimums,
-    header_line_target
-  )
+  add_minimum_rows(table_element.head.rows, minimums)
   for _, body in ipairs(table_element.bodies) do
-    add_wrapped_rows(body.head, preferred, minimums, header_line_target)
-    add_wrapped_rows(body.body, preferred, minimums, body_line_target)
+    add_minimum_rows(body.head, minimums)
+    add_minimum_rows(body.body, minimums)
   end
-  add_wrapped_rows(
-    table_element.foot.rows,
-    preferred,
-    minimums,
-    body_line_target
-  )
-
-  for index, minimum in ipairs(minimums) do
-    preferred[index] = math.max(preferred[index], minimum)
-  end
-  return preferred, minimums
-end
-
-local function copy_widths(widths)
-  local result = {}
-  for index, width in ipairs(widths) do
-    result[index] = width
-  end
-  return result
-end
-
-local function fit_widths_to_budget(widths, minimums, content_budget)
-  local total = sum_widths(widths)
-  while total > content_budget do
-    local selected = nil
-    local greatest_reducible = 0
-    for index, width in ipairs(widths) do
-      local reducible = width - minimums[index]
-      if reducible > greatest_reducible then
-        greatest_reducible = reducible
-        selected = index
-      end
-    end
-
-    if not selected then
-      return widths, false
-    end
-    widths[selected] = widths[selected] - 1
-    total = total - 1
-  end
-
-  return widths, true
+  add_minimum_rows(table_element.foot.rows, minimums)
+  return minimums
 end
 
 local function append_text(result, buffer)
@@ -718,7 +585,6 @@ local function measured_table_plan(
     table_id,
     portrait_budget,
     landscape_content_budget,
-    preferred,
     minimums,
     texts,
     formulas,
@@ -773,13 +639,11 @@ local function measured_table_plan(
   end
 
   return string.format(
-    "\\HomeworkPrepareMeasuredTable{%d}{%d}{%d}{%s}{%s}{%d}{%s}",
+    "\\HomeworkPrepareMeasuredTable{%d}{%d}{%d}{%s}{%s}",
     table_id,
     portrait_budget,
     landscape_content_budget,
-    join_numbers(preferred),
     join_numbers(minimums),
-    1,
     table.concat(measurements)
   )
 end
@@ -876,19 +740,7 @@ local function read_metadata(metadata)
     landscape_budget
   )
 
-  if metadata["table-overflow-policy"] then
-    overflow_policy = pandoc.utils.stringify(metadata["table-overflow-policy"])
-  end
-  if metadata["table-overflow-failure"] then
-    overflow_failure = pandoc.utils.stringify(metadata["table-overflow-failure"])
-  end
   return metadata
-end
-
-local function clear_column_widths(table_element)
-  for _, colspec in ipairs(table_element.colspecs) do
-    colspec[2] = nil
-  end
 end
 
 local function adjust_table_width(table_element)
@@ -903,7 +755,7 @@ local function adjust_table_width(table_element)
     column_count,
     landscape_budget - table_overhead(column_count)
   )
-  local _, minimums = wrapped_column_widths(table_element)
+  local minimums = minimum_column_widths(table_element)
 
   -- Invisible emergency opportunities are inserted before serialization so
   -- TeX's trial paragraphs see the same breakability as the final cells.
@@ -926,7 +778,6 @@ local function adjust_table_width(table_element)
         measured_table_counter,
         content_budget,
         landscape_content_budget,
-        minimums,
         minimums,
         texts,
         formulas,

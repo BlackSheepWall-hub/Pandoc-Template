@@ -647,7 +647,6 @@ width[col] + width[col+1] + width[col+2] ≥ 90mm
 | `table-min-readable-columns` | 每列 Lua 基础硬下限 |
 | `table-unbreakable-text-columns` | 连续文本硬下限上限和紧急断点依据 |
 | `table-overflow-policy` | 模板是否允许从纵向降级到横向；当前有效值为 `landscape` |
-| `table-overflow-failure` | 配置和 Lua 变量仍保留，但当前模板失败路径固定为 `PackageError`，尚无其它策略 |
 | `table-math-min-scale` | 公式和安全 Raw 的最小缩放比例 |
 | `table-padding-x` | 每个单元格左右 `\tabcolsep` |
 | `table-padding-y` | 插入实际首尾文本行的额外净空，并对称扩展表格图片盒子 |
@@ -657,7 +656,7 @@ width[col] + width[col+1] + width[col+2] ≥ 90mm
 
 ### 8.4 现存兼容/遗留路径
 
-`table-width.lua` 中仍保留若干早期字符宽度分配函数，例如自然字符总宽估算、按预算逐列缩减和图片存在性检查。当前最终列宽主要由 TeX 实测路径决定，其中一部分函数已经不在主路径上。
+`table-width.lua` 只保留紧急断点、硬下限和 TeX 测量计划所需的字符估算。早期的自然字符总宽估算、按预算逐列缩减和图片存在性检查已经删除，最终列宽统一由 TeX 实测路径决定。
 
 `homework.tex` 也保留未激活“测量表格”时处理原始 `l/c/r/p` 列的兼容分支。清理这些代码前，必须先完成测试样例审计并建立可重复的回归基线，避免把少见输入依赖的兼容路径误删。
 
@@ -726,9 +725,7 @@ width[col] + width[col+1] + width[col+2] ≥ 90mm
 4. 无题注跨页长表缺少续表编号专项测试；
 5. 错误信息尚不能定位到具体列或单元格；
 6. 重复内容没有测量缓存，大型文档可能执行较多重复盒测量；
-7. Lua 中存在经过多轮迭代后不再参与最终分配的旧估算函数；
-8. `table-overflow-failure` 暂未形成真正的多策略分支；
-9. 当前测试以人工版面检查为主，尚无自动几何回归。
+7. 当前测试以人工版面检查为主，尚无自动几何回归。
 
 后续开发文档可以在本文继续增加：
 

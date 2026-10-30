@@ -4,8 +4,8 @@ from: markdown
 to: pdf
 pdf-engine: xelatex
 template: homework.tex
-# Mark potentially wide pipe tables early; table-width.lua restores natural
-# columns when its per-column content estimate still fits the page budget.
+# Keep Pandoc's parser width stable. Final table classification and sizing use
+# TeX measurements; this value is only the fallback nominal budget.
 columns: 60
 metadata-files:
   - ${USERDATA}/metadata/homework.yaml

@@ -241,7 +241,6 @@ title-details:
 | `table-min-readable-columns` | `6` | 每列不可突破的最小可读宽度 |
 | `table-overflow-policy` | `landscape` | 纵向页面无法满足硬下限时切换到横向页面 |
 | `table-landscape-width-columns` | `112` | 横向页面的字符宽度预算 |
-| `table-overflow-failure` | `error` | 横向页面仍无法容纳时停止转换并报告原因 |
 | `table-math-min-scale` | `0.8` | 公式实测宽度参与列宽分配时的硬下限，同时限制最终安全缩放；再小则停止转换 |
 
 ### 数学公式与工程单位

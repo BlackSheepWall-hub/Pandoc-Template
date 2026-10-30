@@ -610,7 +610,6 @@ $endif$
 % formulas, images, Raw LaTeX, and code before longtable reads its colspec.
 \bool_new:N \g__homework_measured_table_active_bool
 \bool_new:N \g__homework_measured_table_landscape_bool
-\bool_new:N \g__homework_measured_table_exact_outer_bool
 \bool_new:N \l__homework_measured_table_fit_bool
 \seq_new:N \g__homework_measured_table_width_seq
 \seq_new:N \l__homework_measured_table_width_seq
@@ -618,7 +617,6 @@ $endif$
 \seq_new:N \l__homework_measured_table_minimum_seq
 \seq_new:N \l__homework_measured_table_constraint_seq
 \seq_new:N \l__homework_measured_table_text_constraint_seq
-\clist_new:N \l__homework_measured_table_preferred_clist
 \clist_new:N \l__homework_measured_table_minimum_clist
 \dim_new:N \l__homework_measured_table_available_dim
 \dim_new:N \l__homework_measured_table_current_dim
@@ -636,27 +634,17 @@ $endif$
 \dim_new:N \l__homework_measured_table_text_mid_dim
 \dim_new:N \l__homework_measured_table_text_height_dim
 \dim_new:N \l__homework_measured_table_text_target_dim
-\tl_new:N \l__homework_measured_table_id_tl
 \cs_generate_variant:Nn \seq_set_item:Nnn { NnV }
 
 \cs_new_protected:Npn \homework_measured_table_available:nn #1#2
   {
     \dim_set:Nn \l__homework_measured_table_available_dim {#1}
-    \bool_if:NTF \g__homework_measured_table_exact_outer_bool
+    % Deduct both paddings for every wrapped longtable m-column exactly once;
+    % explicit edge material handles border alignment separately.
+    \int_step_inline:nn { 2 * #2 }
       {
-        % Measured tables can fill the complete page budget. Deduct both
-        % paddings for every wrapped longtable m-column exactly once; explicit
-        % edge material handles border alignment separately.
-        \int_step_inline:nn { 2 * #2 }
-          {
-            \dim_sub:Nn \l__homework_measured_table_available_dim
-              { \tabcolsep }
-          }
-      }
-      {
-        % Preserve the established formula-only and legacy table geometry.
         \dim_sub:Nn \l__homework_measured_table_available_dim
-          { 2\tabcolsep }
+          { \tabcolsep }
       }
     \dim_sub:Nn \l__homework_measured_table_available_dim { 2\doublerulesep }
     \int_step_inline:nn { #2 + 2 }
@@ -921,9 +909,9 @@ $endif$
   {
     \bool_set_true:N \l__homework_measured_table_fit_bool
     \homework_measured_table_available:nn
-      {#1} { \clist_count:N \l__homework_measured_table_preferred_clist }
+      {#1} { \clist_count:N \l__homework_measured_table_minimum_clist }
     \seq_clear:N \l__homework_measured_table_width_seq
-    \clist_map_inline:Nn \l__homework_measured_table_preferred_clist
+    \clist_map_inline:Nn \l__homework_measured_table_minimum_clist
       {
         \seq_put_right:Nx \l__homework_measured_table_width_seq
           {
@@ -1077,20 +1065,14 @@ $endif$
       }
   }
 
-\cs_new_protected:Npn \homework_prepare_measured_table:nnnnnnn
-    #1#2#3#4#5#6#7
+\cs_new_protected:Npn \homework_prepare_measured_table:nnnnn #1#2#3#4#5
   {
-    \tl_set:Nn \l__homework_measured_table_id_tl {#1}
     \bool_gset_false:N \g__homework_measured_table_active_bool
     \bool_gset_false:N \g__homework_measured_table_landscape_bool
-    \int_compare:nNnTF {#6} = {1}
-      { \bool_gset_true:N \g__homework_measured_table_exact_outer_bool }
-      { \bool_gset_false:N \g__homework_measured_table_exact_outer_bool }
-    \clist_set:Nn \l__homework_measured_table_preferred_clist {#4}
-    \clist_set:Nn \l__homework_measured_table_minimum_clist {#5}
+    \clist_set:Nn \l__homework_measured_table_minimum_clist {#4}
     \seq_clear:N \l__homework_measured_table_constraint_seq
     \seq_clear:N \l__homework_measured_table_text_constraint_seq
-    #7
+    #5
     \homework_measured_table_try:nn { \linewidth } {#2}
     \bool_if:NF \l__homework_measured_table_fit_bool
       {
@@ -1123,7 +1105,6 @@ $endif$
       { \end{landscape} }
     \bool_gset_false:N \g__homework_measured_table_active_bool
     \bool_gset_false:N \g__homework_measured_table_landscape_bool
-    \bool_gset_false:N \g__homework_measured_table_exact_outer_bool
   }
 
 \NewDocumentCommand{\HomeworkMeasureTableFormula}{m m m}
@@ -1136,10 +1117,9 @@ $endif$
   { \homework_measure_table_raw:nnn {#1} {#2} {#3} }
 \NewDocumentCommand{\HomeworkMeasureTableCode}{m m m m}
   { \homework_measure_table_code:nnnn {#1} {#2} {#3} {#4} }
-\NewDocumentCommand{\HomeworkPrepareMeasuredTable}{m m m m m m m}
+\NewDocumentCommand{\HomeworkPrepareMeasuredTable}{m m m m m}
   {
-    \homework_prepare_measured_table:nnnnnnn
-      {#1} {#2} {#3} {#4} {#5} {#6} {#7}
+    \homework_prepare_measured_table:nnnnn {#1} {#2} {#3} {#4} {#5}
   }
 \NewDocumentCommand{\HomeworkFinishMeasuredTable}{}
   { \homework_finish_measured_table: }

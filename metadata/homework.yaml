@@ -85,7 +85,6 @@ table-unbreakable-text-columns: 12
 table-min-readable-columns: 6
 table-overflow-policy: landscape
 table-landscape-width-columns: 112
-table-overflow-failure: error
 table-math-min-scale: 0.8
 table-rule-width: 0.35pt
 table-header-rule-gap: 1.2pt
