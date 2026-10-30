@@ -18,14 +18,16 @@ Markdown 顶部的同名 YAML 字段会覆盖全局默认值。
 | 页边距 | `geometry` | 四边 `30mm` | 建议同时填写四边 |
 | 标题居中层级 | `center-heading-depth` | `1` | `0` 不居中，`1` 至 `3` 对应标题层级 |
 | 单图宽度 | `width=...` | `33%` | 仅独立图片使用默认值；显式值优先 |
+| 行内图片垂直偏移 | `inline-image-shift` | `-0.20em` | 负值向下移动，使图片与正文视觉居中 |
 | 图片组缩放 | `scale` / `image-row-scale` | `1` | 最终不会超过正文宽度 |
 | 图片组间距 | `gap-ratio` / `image-row-gap-ratio` | `0.04` | 全部间距占图片组总宽度的比例 |
 | 图片组最大高度 | `max-height` / `image-row-max-height` | `60mm` | 保持宽高比，不裁剪 |
 | 表格单元格横向留白 | `table-padding-x` | `10pt` | 控制表格紧凑程度 |
+| 表格单元格纵向留白 | `table-padding-y` | `3pt` | 撑开文字首末行及表格图片的上下净空 |
 | 表格行高 | `table-row-stretch` | `1.30` | 表格行高倍数 |
 | 行内代码内边距 | `inline-code-padding-x/y` | `2pt` | 长代码会自动拆成多行代码框 |
 
-完整默认值位于 [metadata/homework.yaml](./metadata/homework.yaml)，完整示例位于 [test/test.md](./test/test.md)。
+完整默认值位于 [metadata/homework.yaml](./metadata/homework.yaml)，完整示例位于 [test/test.md](./test/test.md)。表格实现、数据流和维护约定见 [DEVELOPMENT.md](./DEVELOPMENT.md)。
 
 ## 快速开始
 
@@ -171,7 +173,8 @@ title-details:
 - 图片始终保持宽高比，不改变全局页边距；
 - 方括号中的文字生成题注，`#fig:...` 生成引用标签；
 - 方括号为空时不生成题注和图片编号；
-- 正文中的行内图片不应用 33% 默认宽度。
+- 正文中的行内图片不应用 33% 默认宽度；
+- 行内图片默认下移 `0.20em` 以对齐正文，可通过 `inline-image-shift` 调整，负值向下、正值向上。
 
 题注参数：
 
@@ -224,12 +227,22 @@ title-details:
 
 分隔行中的 `:---`、`:---:` 和 `---:` 分别表示左对齐、居中和右对齐。表格采用完整网格，表头上下为双横线；跨页时，前一页显示“下页续”，续页显示“表 n（续）”并重复列标题。
 
+所有表格都会在 TeX 排版前使用最终字体测量普通文字、公式、图片、Raw LaTeX 和代码的实际宽度，不再依赖 Pandoc 是否已将其标记为宽表。普通文字的自然宽度包括同一行中的中文、英文、粗体、斜体和公式；自然宽度能够放入正文时，短表直接使用内容所需宽度。只有自然宽度确实超出页面时，模板才会通过二分搜索寻找满足表头约两行、正文单元格约三行的最小首选宽度；重新分配后的总宽度小于正文预算时，表格会随内容收缩。每列仍保留 `table-min-readable-columns` 指定的硬下限，纵向页面容纳不下时自动切换为横向页面；横向页面仍无法满足硬下限时终止转换并说明所需宽度。连续 URL、路径或标识符会预先获得不可见断点，使试排和最终表格具有一致的换行能力。公式和安全的行内 Raw LaTeX 使用有限缩放的硬下限；结构性 Raw LaTeX 仍会终止转换。行内代码和代码块以完整实测宽度作为首选宽度，页面空间不足时仍可收缩并换行。无显式宽度的图片以固有尺寸和正文宽度的 33% 中较小者作为首选宽度，显式图片宽度按作者设置参与分配；图片最终保持比例并限制在单元格内部。defaults 文件中的 `columns: 60` 仅用于兼容 Pandoc 及未显式配置时的预算回退，不再参与宽表筛选。
+
 | 字段 | 默认值 | 作用 |
 |---|---:|---|
 | `table-rule-width` | `0.35pt` | 外框、竖线和正文横线粗细 |
 | `table-header-rule-gap` | `1.2pt` | 表头双横线间距 |
 | `table-padding-x` | `10pt` | 单元格水平内边距 |
+| `table-padding-y` | `3pt` | 撑开实际首末行和表格图片上下边距；表头顶部从双横线的下方横线起算 |
 | `table-row-stretch` | `1.30` | 表格行高倍数 |
+| `table-natural-width-columns` | `72` | 纵向页面的名义字符预算；用于把最小可读宽度换算为物理尺寸，不再用于筛选宽表 |
+| `table-unbreakable-text-columns` | `12` | 连续文本触发紧急断点前保留的宽度；不作用于公式 |
+| `table-min-readable-columns` | `6` | 每列不可突破的最小可读宽度 |
+| `table-overflow-policy` | `landscape` | 纵向页面无法满足硬下限时切换到横向页面 |
+| `table-landscape-width-columns` | `112` | 横向页面的字符宽度预算 |
+| `table-overflow-failure` | `error` | 横向页面仍无法容纳时停止转换并报告原因 |
+| `table-math-min-scale` | `0.8` | 公式实测宽度参与列宽分配时的硬下限，同时限制最终安全缩放；再小则停止转换 |
 
 ### 数学公式与工程单位
 
@@ -243,6 +256,7 @@ pandoc/
 ├── defaults/homework.yaml          # Pandoc 转换配置
 ├── filters/
 │   ├── image-row.lua               # 单图默认宽度与图片组排版
+│   ├── inline-image.lua            # 行内图片垂直对齐
 │   └── inline-code.lua             # 长行内代码换行
 ├── metadata/homework.yaml          # 可覆盖的默认元数据
 ├── scripts/

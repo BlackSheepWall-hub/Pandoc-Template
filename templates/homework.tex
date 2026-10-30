@@ -64,6 +64,8 @@ $--
 \usepackage{hhline}
 \usepackage{xparse}
 \usepackage{caption}
+\usepackage{adjustbox}
+\usepackage{pdflscape}
 
 % Keep title-detail italics in the main CJK font, using a synthetic slant
 % because the default CJK roman font has no native italic face.
@@ -528,24 +530,736 @@ $endif$
 \setlength{\doublerulesep}{$table-header-rule-gap$}
 \setlength{\tabcolsep}{$table-padding-x$}
 \renewcommand{\arraystretch}{$table-row-stretch$}
+% The table-padding filter places these struts in the actual first and last
+% text lines of each cell.  This also works inside Pandoc's header minipages,
+% where array struts and minimum-clearance packages do not affect tall cells.
+\newcommand{\HomeworkCellTopStrut}{%
+  \rule{0pt}{\dimexpr\ht\strutbox+$table-padding-y$\relax}%
+}
+\newcommand{\HomeworkCellBottomStrut}{%
+  \rule[-\dimexpr\dp\strutbox+$table-padding-y$\relax]
+    {0pt}{\dimexpr\dp\strutbox+$table-padding-y$\relax}%
+}
+\newcolumntype{M}[1]{m{#1}}
+
+% Atomic cell contents are checked against the actual TeX cell width.  Mildly
+% oversized formulas may shrink by at most 20%; larger ones stop compilation
+% instead of silently crossing a cell or page boundary.
+\ExplSyntaxOn
+\box_new:N \l__homework_cell_math_box
+\box_new:N \l__homework_cell_raw_box
+\box_new:N \l__homework_cell_graphic_box
+\box_new:N \l__homework_cell_text_box
+\cs_new_protected:Npn \homework_fit_cell_math:n #1
+  {
+    \hbox_set:Nn \l__homework_cell_math_box {#1}
+    \dim_compare:nNnTF
+      { \box_wd:N \l__homework_cell_math_box } > { \linewidth }
+      {
+        \dim_compare:nNnTF
+          { \box_wd:N \l__homework_cell_math_box }
+          > {
+              \fp_to_dim:n
+                { \dim_to_fp:n { \linewidth } / $table-math-min-scale$ }
+            }
+          {
+            \PackageError{homework-table}
+              {A table-cell formula is more than 25 percent too wide}
+              {Use a shorter formula, split it, or place the table in a wider layout.}
+          }
+          {
+            \resizebox{\linewidth}{!}
+              { \box_use_drop:N \l__homework_cell_math_box }
+          }
+      }
+      { \box_use_drop:N \l__homework_cell_math_box }
+  }
+\NewDocumentCommand{\HomeworkFitCellMath}{m}
+  { \homework_fit_cell_math:n {#1} }
+
+\cs_new_protected:Npn \homework_fit_cell_raw:n #1
+  {
+    \hbox_set:Nn \l__homework_cell_raw_box {#1}
+    \dim_compare:nNnTF
+      { \box_wd:N \l__homework_cell_raw_box } > { \linewidth }
+      {
+        \dim_compare:nNnTF
+          { \box_wd:N \l__homework_cell_raw_box }
+          > {
+              \fp_to_dim:n
+                { \dim_to_fp:n { \linewidth } / $table-math-min-scale$ }
+            }
+          {
+            \PackageError{homework-table}
+              {Raw LaTeX in a table cell is more than 25 percent too wide}
+              {Use shorter inline content or provide a manual table layout.}
+          }
+          {
+            \resizebox{\linewidth}{!}
+              { \box_use_drop:N \l__homework_cell_raw_box }
+          }
+      }
+      { \box_use_drop:N \l__homework_cell_raw_box }
+  }
+\NewDocumentCommand{\HomeworkFitCellRaw}{m}
+  { \homework_fit_cell_raw:n {#1} }
+
+% Every table is sized in the same TeX run that renders it. Lua supplies only
+% structural information, emergency breakpoints, and readable lower bounds;
+% the measurements below add actual final-font dimensions for ordinary text,
+% formulas, images, Raw LaTeX, and code before longtable reads its colspec.
+\bool_new:N \g__homework_measured_table_active_bool
+\bool_new:N \g__homework_measured_table_landscape_bool
+\bool_new:N \g__homework_measured_table_exact_outer_bool
+\bool_new:N \l__homework_measured_table_fit_bool
+\seq_new:N \g__homework_measured_table_width_seq
+\seq_new:N \l__homework_measured_table_width_seq
+\seq_new:N \l__homework_measured_table_natural_seq
+\seq_new:N \l__homework_measured_table_minimum_seq
+\seq_new:N \l__homework_measured_table_constraint_seq
+\seq_new:N \l__homework_measured_table_text_constraint_seq
+\clist_new:N \l__homework_measured_table_preferred_clist
+\clist_new:N \l__homework_measured_table_minimum_clist
+\dim_new:N \l__homework_measured_table_available_dim
+\dim_new:N \l__homework_measured_table_current_dim
+\dim_new:N \l__homework_measured_table_required_dim
+\dim_new:N \l__homework_measured_table_missing_dim
+\dim_new:N \l__homework_measured_table_share_dim
+\dim_new:N \l__homework_measured_table_total_dim
+\dim_new:N \l__homework_measured_table_minimum_total_dim
+\dim_new:N \l__homework_measured_table_excess_dim
+\dim_new:N \l__homework_measured_table_slack_dim
+\dim_new:N \l__homework_measured_table_total_slack_dim
+\dim_new:N \l__homework_measured_table_reduction_dim
+\dim_new:N \l__homework_measured_table_text_low_dim
+\dim_new:N \l__homework_measured_table_text_high_dim
+\dim_new:N \l__homework_measured_table_text_mid_dim
+\dim_new:N \l__homework_measured_table_text_height_dim
+\dim_new:N \l__homework_measured_table_text_target_dim
+\tl_new:N \l__homework_measured_table_id_tl
+\cs_generate_variant:Nn \seq_set_item:Nnn { NnV }
+
+\cs_new_protected:Npn \homework_measured_table_available:nn #1#2
+  {
+    \dim_set:Nn \l__homework_measured_table_available_dim {#1}
+    \bool_if:NTF \g__homework_measured_table_exact_outer_bool
+      {
+        % Measured tables can fill the complete page budget. Deduct both
+        % paddings for every wrapped longtable m-column exactly once; explicit
+        % edge material handles border alignment separately.
+        \int_step_inline:nn { 2 * #2 }
+          {
+            \dim_sub:Nn \l__homework_measured_table_available_dim
+              { \tabcolsep }
+          }
+      }
+      {
+        % Preserve the established formula-only and legacy table geometry.
+        \dim_sub:Nn \l__homework_measured_table_available_dim
+          { 2\tabcolsep }
+      }
+    \dim_sub:Nn \l__homework_measured_table_available_dim { 2\doublerulesep }
+    \int_step_inline:nn { #2 + 2 }
+      {
+        \dim_sub:Nn \l__homework_measured_table_available_dim
+          { \arrayrulewidth }
+      }
+  }
+
+\cs_new_protected:Npn \homework_measured_table_sum:NN #1#2
+  {
+    \dim_zero:N #2
+    \seq_map_inline:Nn #1 { \dim_add:Nn #2 {##1} }
+  }
+
+\cs_new_protected:Npn \homework_measured_table_raise_span:Nnnn #1#2#3#4
+  {
+    \dim_zero:N \l__homework_measured_table_current_dim
+    \int_step_inline:nnnn {#2} {1} { #2 + #3 - 1 }
+      {
+        \dim_add:Nn \l__homework_measured_table_current_dim
+          { \seq_item:Nn #1 {##1} }
+      }
+    \dim_set:Nn \l__homework_measured_table_missing_dim
+      { #4 - \l__homework_measured_table_current_dim }
+    \dim_compare:nNnT { \l__homework_measured_table_missing_dim } > { 0pt }
+      {
+        \dim_set:Nn \l__homework_measured_table_share_dim
+          { \l__homework_measured_table_missing_dim / #3 }
+        \int_step_inline:nnnn {#2} {1} { #2 + #3 - 1 }
+          {
+            \dim_set:Nn \l__homework_measured_table_current_dim
+              { \seq_item:Nn #1 {##1} }
+            \dim_add:Nn \l__homework_measured_table_current_dim
+              { \l__homework_measured_table_share_dim }
+            \seq_set_item:NnV #1 {##1}
+              \l__homework_measured_table_current_dim
+          }
+      }
+  }
+
+\cs_new_protected:Npn \homework_measured_table_raise_preferred:nnn #1#2#3
+  {
+    \homework_measured_table_raise_span:Nnnn
+      \l__homework_measured_table_natural_seq {#1} {#2} {#3}
+    \homework_measured_table_raise_span:Nnnn
+      \l__homework_measured_table_width_seq {#1} {#2} {#3}
+  }
+
+\cs_new_protected:Npn \homework_measured_table_span_minimum:nn #1#2
+  {
+    \dim_zero:N \l__homework_measured_table_text_low_dim
+    \int_step_inline:nnnn {#1} {1} { #1 + #2 - 1 }
+      {
+        \dim_add:Nn \l__homework_measured_table_text_low_dim
+          { \seq_item:Nn \l__homework_measured_table_minimum_seq {##1} }
+      }
+  }
+
+\cs_new_protected:Npn \homework_measured_table_text_trial:nn #1#2
+  {
+    \vbox_set:Nn \l__homework_cell_text_box
+      {
+        \hsize=#1\relax
+        \linewidth=#1\relax
+        \parindent=0pt
+        \parskip=0pt
+        \raggedright
+        \noindent #2\par
+      }
+    \dim_set:Nn \l__homework_measured_table_text_height_dim
+      {
+        \box_ht:N \l__homework_cell_text_box
+        + \box_dp:N \l__homework_cell_text_box
+      }
+  }
+
+\cs_new_protected:Npn \homework_measured_table_apply_text_natural:nnn #1#2#3
+  {
+    \homework_measured_table_raise_span:Nnnn
+      \l__homework_measured_table_natural_seq {#1} {#2} {#3}
+  }
+
+\cs_new_protected:Npn \homework_measured_table_apply_text_wrapped:nnnn #1#2#3#4
+  {
+    \hbox_set:Nn \l__homework_cell_text_box {#4}
+    \dim_set:Nn \l__homework_measured_table_text_high_dim
+      { \box_wd:N \l__homework_cell_text_box }
+    \homework_measured_table_span_minimum:nn {#1} {#2}
+    \dim_set:Nn \l__homework_measured_table_text_target_dim
+      { #3\baselineskip }
+    \dim_compare:nNnT
+      { \l__homework_measured_table_text_high_dim }
+      > { \l__homework_measured_table_text_low_dim }
+      {
+        % Ten bisection steps give sub-point precision at normal page widths.
+        \int_step_inline:nn {10}
+          {
+            \dim_set:Nn \l__homework_measured_table_text_mid_dim
+              {
+                ( \l__homework_measured_table_text_low_dim
+                  + \l__homework_measured_table_text_high_dim ) / 2
+              }
+            \homework_measured_table_text_trial:nn
+              { \l__homework_measured_table_text_mid_dim } {#4}
+            \dim_compare:nNnTF
+              { \l__homework_measured_table_text_height_dim }
+              > { \l__homework_measured_table_text_target_dim }
+              {
+                \dim_set_eq:NN \l__homework_measured_table_text_low_dim
+                  \l__homework_measured_table_text_mid_dim
+              }
+              {
+                \dim_set_eq:NN \l__homework_measured_table_text_high_dim
+                  \l__homework_measured_table_text_mid_dim
+              }
+          }
+      }
+    \homework_measured_table_raise_span:Nnnn
+      \l__homework_measured_table_width_seq {#1} {#2}
+      { \l__homework_measured_table_text_high_dim }
+  }
+
+\cs_new_protected:Npn \homework_measure_table_text:nnnnn #1#2#3#4#5
+  {
+    \hbox_set:Nn \l__homework_cell_text_box {#4}
+    \seq_put_right:Nx \l__homework_measured_table_constraint_seq
+      {
+        \exp_not:N \homework_measured_table_apply_text_natural:nnn
+          {#1} {#2}
+          { \dim_eval:n { \box_wd:N \l__homework_cell_text_box } }
+      }
+    \seq_put_right:Nn \l__homework_measured_table_text_constraint_seq
+      {
+        \homework_measured_table_apply_text_wrapped:nnnn
+          {#1} {#2} {#3} {#5}
+      }
+  }
+
+\cs_new_protected:Npn \homework_measured_table_apply_formula:nnn #1#2#3
+  {
+    \homework_measured_table_raise_preferred:nnn {#1} {#2} {#3}
+    \dim_set:Nn \l__homework_measured_table_required_dim
+      {
+        \fp_to_dim:n
+          { \dim_to_fp:n {#3} * $table-math-min-scale$ }
+      }
+    \homework_measured_table_raise_span:Nnnn
+      \l__homework_measured_table_minimum_seq {#1} {#2}
+      { \l__homework_measured_table_required_dim }
+  }
+
+\cs_new_protected:Npn \homework_measure_table_formula:nnn #1#2#3
+  {
+    \hbox_set:Nn \l__homework_cell_math_box {#3}
+    \seq_put_right:Nx \l__homework_measured_table_constraint_seq
+      {
+        \exp_not:N \homework_measured_table_apply_formula:nnn
+          {#1} {#2} { \dim_eval:n { \box_wd:N \l__homework_cell_math_box } }
+      }
+  }
+
+\cs_new_protected:Npn \homework_measured_table_apply_graphic:nnnn #1#2#3#4
+  {
+    % A graphic's rendered width is a preference, not a hard readability
+    % limit: it influences the initial allocation, but may still shrink to
+    % make room for other columns.  Never let one image request more than the
+    % complete table content area.
+    \dim_set:Nn \l__homework_measured_table_required_dim
+      {
+        \dim_min:nn
+          {#4}
+          { \l__homework_measured_table_available_dim }
+      }
+    % An image without an explicit author width keeps its intrinsic size when
+    % small, but uses the template's one-third-line default as its preferred
+    % maximum.  Explicit widths are measured and respected as written.
+    \int_compare:nNnT {#3} = {1}
+      {
+        \dim_set:Nn \l__homework_measured_table_required_dim
+          {
+            \dim_min:nn
+              { \l__homework_measured_table_required_dim }
+              {
+                \fp_to_dim:n
+                  {
+                    \dim_to_fp:n
+                      { \l__homework_measured_table_available_dim }
+                    * 0.33
+                  }
+              }
+          }
+      }
+    \homework_measured_table_raise_preferred:nnn {#1} {#2}
+      { \l__homework_measured_table_required_dim }
+  }
+
+\cs_new_protected:Npn \homework_measure_table_graphic:nnnn #1#2#3#4
+  {
+    \hbox_set:Nn \l__homework_cell_graphic_box
+      {
+        \adjustbox
+          { max~totalheight=.72\textheight,keepaspectratio }
+          {#4}
+      }
+    \seq_put_right:Nx \l__homework_measured_table_constraint_seq
+      {
+        \exp_not:N \homework_measured_table_apply_graphic:nnnn
+          {#1} {#2} {#3}
+          { \dim_eval:n { \box_wd:N \l__homework_cell_graphic_box } }
+      }
+  }
+
+\cs_new_protected:Npn \homework_measure_table_raw:nnn #1#2#3
+  {
+    \hbox_set:Nn \l__homework_cell_raw_box {#3}
+    \seq_put_right:Nx \l__homework_measured_table_constraint_seq
+      {
+        % Raw inline content has the same limited-shrink safety contract as a
+        % formula, so reuse both its preferred and hard-minimum constraints.
+        \exp_not:N \homework_measured_table_apply_formula:nnn
+          {#1} {#2} { \dim_eval:n { \box_wd:N \l__homework_cell_raw_box } }
+      }
+  }
+
+\cs_new_protected:Npn \homework_measured_table_apply_code:nnn #1#2#3
+  {
+    % Code can break at punctuation or, as a last resort, between characters.
+    % Its full measured width is the preferred width, not a hard minimum.  The
+    % table fitter may still shrink it when that is needed to remain on-page.
+    \homework_measured_table_raise_preferred:nnn {#1} {#2} {#3}
+  }
+
+\cs_new_protected:Npn \homework_measure_table_code:nnnn #1#2#3#4
+  {
+    \int_compare:nNnTF {#3} = {1}
+      {
+        \hbox_set:Nn \l__homework_cell_raw_box
+          { \HomeworkInlineCodeBox{#4} }
+        \dim_set:Nn \l__homework_measured_table_required_dim
+          { \box_wd:N \l__homework_cell_raw_box }
+      }
+      {
+        \hbox_set:Nn \l__homework_cell_raw_box
+          { {\small\ttfamily #4} }
+        \dim_set:Nn \l__homework_measured_table_required_dim
+          {
+            \box_wd:N \l__homework_cell_raw_box
+            + 2\dimexpr$code-padding-x$\relax
+            + 2\dimexpr$code-border-width$\relax
+          }
+      }
+    \seq_put_right:Nx \l__homework_measured_table_constraint_seq
+      {
+        \exp_not:N \homework_measured_table_apply_code:nnn
+          {#1} {#2}
+          { \dim_use:N \l__homework_measured_table_required_dim }
+      }
+  }
+
+\cs_new_protected:Npn \homework_measured_table_try:nn #1#2
+  {
+    \bool_set_true:N \l__homework_measured_table_fit_bool
+    \homework_measured_table_available:nn
+      {#1} { \clist_count:N \l__homework_measured_table_preferred_clist }
+    \seq_clear:N \l__homework_measured_table_width_seq
+    \clist_map_inline:Nn \l__homework_measured_table_preferred_clist
+      {
+        \seq_put_right:Nx \l__homework_measured_table_width_seq
+          {
+            \fp_to_dim:n
+              {
+                \dim_to_fp:n { \l__homework_measured_table_available_dim }
+                * (##1) / (#2)
+              }
+          }
+      }
+    \seq_set_eq:NN \l__homework_measured_table_natural_seq
+      \l__homework_measured_table_width_seq
+    \seq_clear:N \l__homework_measured_table_minimum_seq
+    \clist_map_inline:Nn \l__homework_measured_table_minimum_clist
+      {
+        \seq_put_right:Nx \l__homework_measured_table_minimum_seq
+          {
+            \fp_to_dim:n
+              {
+                \dim_to_fp:n { \l__homework_measured_table_available_dim }
+                * (##1) / (#2)
+              }
+          }
+      }
+    \seq_map_inline:Nn \l__homework_measured_table_constraint_seq {##1}
+    \homework_measured_table_sum:NN
+      \l__homework_measured_table_minimum_seq
+      \l__homework_measured_table_minimum_total_dim
+    \dim_compare:nNnTF
+      { \l__homework_measured_table_minimum_total_dim }
+      > { \l__homework_measured_table_available_dim }
+      { \bool_set_false:N \l__homework_measured_table_fit_bool }
+      {
+        \homework_measured_table_sum:NN
+          \l__homework_measured_table_natural_seq
+          \l__homework_measured_table_total_dim
+        \dim_compare:nNnTF
+          { \l__homework_measured_table_total_dim }
+          < { \l__homework_measured_table_available_dim + 0.01pt }
+          {
+            % Compact tables keep the exact width required by their rendered
+            % text instead of being expanded to the page budget.
+            \seq_set_eq:NN \l__homework_measured_table_width_seq
+              \l__homework_measured_table_natural_seq
+          }
+          {
+            % Only genuinely over-wide tables pay for wrapped paragraph
+            % measurement. Compact tables stop after their natural widths.
+            \seq_map_inline:Nn
+              \l__homework_measured_table_text_constraint_seq {##1}
+            \homework_measured_table_sum:NN
+              \l__homework_measured_table_width_seq
+              \l__homework_measured_table_total_dim
+            \dim_compare:nNnT
+              { \l__homework_measured_table_total_dim }
+              > { \l__homework_measured_table_available_dim }
+              {
+                \dim_set:Nn \l__homework_measured_table_excess_dim
+                  {
+                    \l__homework_measured_table_total_dim
+                    - \l__homework_measured_table_available_dim
+                  }
+                \dim_set:Nn \l__homework_measured_table_total_slack_dim
+                  {
+                    \l__homework_measured_table_total_dim
+                    - \l__homework_measured_table_minimum_total_dim
+                  }
+                \int_step_inline:nn
+                  { \seq_count:N \l__homework_measured_table_width_seq }
+                  {
+                    \dim_set:Nn \l__homework_measured_table_current_dim
+                      {
+                        \seq_item:Nn
+                          \l__homework_measured_table_width_seq {##1}
+                      }
+                    \dim_set:Nn \l__homework_measured_table_slack_dim
+                      {
+                        \l__homework_measured_table_current_dim
+                        - \seq_item:Nn
+                            \l__homework_measured_table_minimum_seq {##1}
+                      }
+                    \dim_set:Nn
+                      \l__homework_measured_table_reduction_dim
+                      {
+                        \fp_to_dim:n
+                          {
+                            \dim_to_fp:n
+                              { \l__homework_measured_table_excess_dim }
+                            * \dim_to_fp:n
+                              { \l__homework_measured_table_slack_dim }
+                            / \dim_to_fp:n
+                              { \l__homework_measured_table_total_slack_dim }
+                          }
+                      }
+                    \dim_sub:Nn \l__homework_measured_table_current_dim
+                      { \l__homework_measured_table_reduction_dim }
+                    \seq_set_item:NnV
+                      \l__homework_measured_table_width_seq {##1}
+                      \l__homework_measured_table_current_dim
+                  }
+                % Remove sub-point rounding residue without crossing a hard
+                % minimum. Usually only the first eligible column is touched.
+                \homework_measured_table_sum:NN
+                  \l__homework_measured_table_width_seq
+                  \l__homework_measured_table_total_dim
+                \dim_set:Nn \l__homework_measured_table_excess_dim
+                  {
+                    \l__homework_measured_table_total_dim
+                    - \l__homework_measured_table_available_dim
+                  }
+                \int_step_inline:nn
+                  { \seq_count:N \l__homework_measured_table_width_seq }
+                  {
+                    \dim_compare:nNnT
+                      { \l__homework_measured_table_excess_dim } > { 0pt }
+                      {
+                        \dim_set:Nn \l__homework_measured_table_current_dim
+                          {
+                            \seq_item:Nn
+                              \l__homework_measured_table_width_seq {##1}
+                          }
+                        \dim_set:Nn \l__homework_measured_table_slack_dim
+                          {
+                            \l__homework_measured_table_current_dim
+                            - \seq_item:Nn
+                                \l__homework_measured_table_minimum_seq {##1}
+                          }
+                        \dim_set:Nn
+                          \l__homework_measured_table_reduction_dim
+                          {
+                            \dim_min:nn
+                              { \l__homework_measured_table_excess_dim }
+                              { \l__homework_measured_table_slack_dim }
+                          }
+                        \dim_sub:Nn \l__homework_measured_table_current_dim
+                          { \l__homework_measured_table_reduction_dim }
+                        \dim_sub:Nn \l__homework_measured_table_excess_dim
+                          { \l__homework_measured_table_reduction_dim }
+                        \seq_set_item:NnV
+                          \l__homework_measured_table_width_seq {##1}
+                          \l__homework_measured_table_current_dim
+                      }
+                  }
+              }
+          }
+      }
+    \bool_if:NT \l__homework_measured_table_fit_bool
+      {
+        \seq_gset_eq:NN \g__homework_measured_table_width_seq
+          \l__homework_measured_table_width_seq
+      }
+  }
+
+\cs_new_protected:Npn \homework_prepare_measured_table:nnnnnnn
+    #1#2#3#4#5#6#7
+  {
+    \tl_set:Nn \l__homework_measured_table_id_tl {#1}
+    \bool_gset_false:N \g__homework_measured_table_active_bool
+    \bool_gset_false:N \g__homework_measured_table_landscape_bool
+    \int_compare:nNnTF {#6} = {1}
+      { \bool_gset_true:N \g__homework_measured_table_exact_outer_bool }
+      { \bool_gset_false:N \g__homework_measured_table_exact_outer_bool }
+    \clist_set:Nn \l__homework_measured_table_preferred_clist {#4}
+    \clist_set:Nn \l__homework_measured_table_minimum_clist {#5}
+    \seq_clear:N \l__homework_measured_table_constraint_seq
+    \seq_clear:N \l__homework_measured_table_text_constraint_seq
+    #7
+    \homework_measured_table_try:nn { \linewidth } {#2}
+    \bool_if:NF \l__homework_measured_table_fit_bool
+      {
+        \str_if_eq:nnT { $table-overflow-policy$ } { landscape }
+          {
+            \homework_measured_table_try:nn { \textheight } {#3}
+            \bool_if:NT \l__homework_measured_table_fit_bool
+              {
+                \bool_gset_true:N
+                  \g__homework_measured_table_landscape_bool
+              }
+          }
+      }
+    \bool_if:NTF \l__homework_measured_table_fit_bool
+      {
+        \bool_gset_true:N \g__homework_measured_table_active_bool
+        \bool_if:NT \g__homework_measured_table_landscape_bool
+          { \begin{landscape} }
+      }
+      {
+        \PackageError{homework-table}
+          {Measured table~#1 cannot fit its content constraints}
+          {Shorten atomic content, split the table, or use a manual layout.}
+      }
+  }
+
+\cs_new_protected:Npn \homework_finish_measured_table:
+  {
+    \bool_if:NT \g__homework_measured_table_landscape_bool
+      { \end{landscape} }
+    \bool_gset_false:N \g__homework_measured_table_active_bool
+    \bool_gset_false:N \g__homework_measured_table_landscape_bool
+    \bool_gset_false:N \g__homework_measured_table_exact_outer_bool
+  }
+
+\NewDocumentCommand{\HomeworkMeasureTableFormula}{m m m}
+  { \homework_measure_table_formula:nnn {#1} {#2} {#3} }
+\NewDocumentCommand{\HomeworkMeasureTableText}{m m m m m}
+  { \homework_measure_table_text:nnnnn {#1} {#2} {#3} {#4} {#5} }
+\NewDocumentCommand{\HomeworkMeasureTableGraphic}{m m m m}
+  { \homework_measure_table_graphic:nnnn {#1} {#2} {#3} {#4} }
+\NewDocumentCommand{\HomeworkMeasureTableRaw}{m m m}
+  { \homework_measure_table_raw:nnn {#1} {#2} {#3} }
+\NewDocumentCommand{\HomeworkMeasureTableCode}{m m m m}
+  { \homework_measure_table_code:nnnn {#1} {#2} {#3} {#4} }
+\NewDocumentCommand{\HomeworkPrepareMeasuredTable}{m m m m m m m}
+  {
+    \homework_prepare_measured_table:nnnnnnn
+      {#1} {#2} {#3} {#4} {#5} {#6} {#7}
+  }
+\NewDocumentCommand{\HomeworkFinishMeasuredTable}{}
+  { \homework_finish_measured_table: }
+\ExplSyntaxOff
+
+% A tall graphic hides a same-line top strut inside its own height while the
+% bottom strut remains visible. Fit first, then extend the final graphic box
+% equally above and below. The normal strut depth is included so adjacent text
+% cells cannot enlarge only the lower side of the shared table row.
+\newsavebox{\HomeworkCellGraphicBox}
+\newcommand{\HomeworkFitCellGraphic}[1]{%
+  \sbox{\HomeworkCellGraphicBox}{%
+    \adjustbox{
+      max width=\linewidth,
+      max totalheight=.72\textheight,
+      keepaspectratio
+    }{#1}%
+  }%
+  \raisebox{0pt}[
+    \dimexpr\ht\HomeworkCellGraphicBox+\dp\strutbox+$table-padding-y$\relax
+  ][
+    \dimexpr\dp\HomeworkCellGraphicBox+\dp\strutbox+$table-padding-y$\relax
+  ]{\usebox{\HomeworkCellGraphicBox}}%
+}
+
+% Pandoc's plain code blocks use this environment.  Long lines inside table
+% cells must wrap rather than create an overfull box.
+\RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere}
 
 \let\PandocLongtable\longtable
 \let\endPandocLongtable\endlongtable
 
 \ExplSyntaxOn
 \tl_new:N \l__homework_colspec_tl
+\tl_new:N \l__homework_rebuilt_colspec_tl
+\tl_new:N \l__homework_colspec_part_tl
+\tl_new:N \l__homework_colspec_tail_tl
+\seq_new:N \l__homework_table_colspec_parts_seq
+\int_new:N \l__homework_table_column_count_int
+\dim_new:N \l__homework_table_available_width_dim
+\dim_new:N \l__homework_table_original_linewidth_dim
+\dim_new:N \l__homework_table_measured_outer_width_dim
+\cs_generate_variant:Nn \seq_set_split:Nnn { NnV }
 
 \cs_new_protected:Npn \homework_longtable_apply:nn #1#2
   { \PandocLongtable[#1]{#2} }
 
+\cs_new_protected:Npn \homework_colspec_discard_before_alignment:w
+    #1>#2\q_stop
+  { \tl_set:Nn \l__homework_colspec_tail_tl {>{#2}} }
+
 \cs_new_protected:Npn \homework_prepare_colspec:n #1
   {
     \tl_set:Nn \l__homework_colspec_tl {#1}
+    % Pandoc uses natural-width l/c/r columns for compact tables and fixed
+    % p-columns for tables that need wrapping.  Keep compact tables natural,
+    % but reduce the width budget of fixed-width tables before adding our
+    % padding, vertical rules, and hhline alignment correction.
+    \seq_set_split:NnV \l__homework_table_colspec_parts_seq
+      { p }
+      \l__homework_colspec_tl
+    \int_set:Nn \l__homework_table_column_count_int
+      { \seq_count:N \l__homework_table_colspec_parts_seq - 1 }
+    \int_compare:nNnT { \l__homework_table_column_count_int } > { 0 }
+      {
+        \dim_set:Nn \l__homework_table_available_width_dim { \linewidth }
+        \dim_sub:Nn \l__homework_table_available_width_dim { 2\tabcolsep }
+        \dim_sub:Nn \l__homework_table_available_width_dim { 2\doublerulesep }
+        \int_step_inline:nn
+          { \l__homework_table_column_count_int + 2 }
+          {
+            \dim_sub:Nn \l__homework_table_available_width_dim
+              { \arrayrulewidth }
+          }
+      }
     \regex_replace_all:nnN {@\{\}} {} \l__homework_colspec_tl
-    \tl_replace_all:Nnn \l__homework_colspec_tl {p} {m}
+    \bool_if:NTF \g__homework_measured_table_active_bool
+      {
+        % Each p{...} is only a Pandoc placeholder for a measured table.  Keep
+        % its alignment prefix, discard the provisional width argument, and
+        % insert the exact dimension calculated before longtable began.
+        \seq_set_split:NnV \l__homework_table_colspec_parts_seq
+          { p }
+          \l__homework_colspec_tl
+        \seq_pop_left:NN \l__homework_table_colspec_parts_seq
+          \l__homework_rebuilt_colspec_tl
+        \int_zero:N \l_tmpa_int
+        \seq_map_inline:Nn \l__homework_table_colspec_parts_seq
+          {
+            \int_incr:N \l_tmpa_int
+            \tl_set:Nn \l__homework_colspec_part_tl {##1}
+            \tl_trim_spaces:N \l__homework_colspec_part_tl
+            \int_compare:nNnTF
+              { \l_tmpa_int } < { \l__homework_table_column_count_int }
+              {
+                \exp_after:wN
+                  \homework_colspec_discard_before_alignment:w
+                  \l__homework_colspec_part_tl \q_stop
+              }
+              {
+                \tl_clear:N \l__homework_colspec_tail_tl
+              }
+            \tl_put_right:Nx \l__homework_rebuilt_colspec_tl
+              {
+                M
+                {
+                  \seq_item:Nn
+                    \g__homework_measured_table_width_seq
+                    { \l_tmpa_int }
+                }
+                \exp_not:V \l__homework_colspec_tail_tl
+              }
+          }
+        \tl_set_eq:NN \l__homework_colspec_tl
+          \l__homework_rebuilt_colspec_tl
+      }
+      { \tl_replace_all:Nnn \l__homework_colspec_tl {p} {M} }
     \tl_if_in:NnTF \l__homework_colspec_tl {>}
       { \tl_replace_all:Nnn \l__homework_colspec_tl {>} {|>} }
-      { \regex_replace_all:nnN {([lcrmbX])} {|\1} \l__homework_colspec_tl }
+      { \regex_replace_all:nnN {([lcr])} {|\1} \l__homework_colspec_tl }
     \tl_put_right:Nn \l__homework_colspec_tl {|}
     % Align longtable's left border with the hhline grid.
     \tl_put_left:Nn \l__homework_colspec_tl
@@ -555,12 +1269,56 @@ $endif$
 
 \cs_new_protected:Npn \homework_begin_longtable:nn #1#2
   {
+    \dim_set:Nn \l__homework_table_original_linewidth_dim { \linewidth }
     \homework_prepare_colspec:n {#2}
+    \bool_if:NTF \g__homework_measured_table_active_bool
+      {
+        % Pandoc writes multicolumn widths as fractions of \linewidth even
+        % when the ordinary columns have been replaced with literal measured
+        % dimensions. Match that reference length to the measured table's
+        % complete outer width so spanning cells cannot retain page width.
+        \homework_measured_table_sum:NN
+          \g__homework_measured_table_width_seq
+          \l__homework_table_measured_outer_width_dim
+        \int_step_inline:nn
+          { 2 * \l__homework_table_column_count_int }
+          {
+            \dim_add:Nn \l__homework_table_measured_outer_width_dim
+              { \tabcolsep }
+          }
+        \dim_add:Nn \l__homework_table_measured_outer_width_dim
+          { 2\doublerulesep }
+        \int_step_inline:nn
+          { \l__homework_table_column_count_int + 2 }
+          {
+            \dim_add:Nn \l__homework_table_measured_outer_width_dim
+              { \arrayrulewidth }
+          }
+        \setlength{\linewidth}
+          { \l__homework_table_measured_outer_width_dim }
+      }
+      {
+        % Legacy Pandoc p-column expressions need the reduced local linewidth
+        % before the template adds padding and grid rules.
+        \int_compare:nNnT { \l__homework_table_column_count_int } > { 0 }
+          {
+            \setlength{\linewidth}
+              { \l__homework_table_available_width_dim }
+          }
+      }
     \exp_args:NnV \homework_longtable_apply:nn {#1}
       \l__homework_colspec_tl
   }
 
+\cs_new_protected:Npn \homework_end_longtable:
+  {
+    \endPandocLongtable
+    \setlength{\linewidth}
+      { \l__homework_table_original_linewidth_dim }
+  }
+
 \cs_new_eq:NN \HomeworkBeginLongtable \homework_begin_longtable:nn
+\cs_new_eq:NN \HomeworkEndLongtable \homework_end_longtable:
 \ExplSyntaxOff
 
 \RenewDocumentEnvironment{longtable}{O{c} m}{%
@@ -568,7 +1326,11 @@ $endif$
   \let\HomeworkDocumentTabularNewline\tabularnewline
   \HomeworkBeginLongtable{#1}{#2}%
 }{%
-  \endPandocLongtable
+  % The wrapper's end code is read while TeX is ready to start the next
+  % alignment row.  Consume that state with a primitive, zero-height span:
+  % unlike \multicolumn it inserts neither column rules nor an array strut.
+  \multispan{\csname LT@cols\endcsname}%
+  \HomeworkEndLongtable
   \global\let\\\HomeworkDocumentRowBreak
   \global\let\tabularnewline\HomeworkDocumentTabularNewline
 }
@@ -588,6 +1350,7 @@ $endif$
   }\HomeworkOriginalTableRowBreak
 }
 \newcommand{\HomeworkContinuedTableFooter}{%
+  \HomeworkThinTableRule
   \multicolumn{\LT@cols}{r}{%
     \small\CaptionLatinFont\CaptionCJKFont
     （下页续）%

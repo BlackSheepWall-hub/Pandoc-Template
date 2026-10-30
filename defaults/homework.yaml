@@ -4,10 +4,16 @@ from: markdown
 to: pdf
 pdf-engine: xelatex
 template: homework.tex
+# Mark potentially wide pipe tables early; table-width.lua restores natural
+# columns when its per-column content estimate still fits the page budget.
+columns: 60
 metadata-files:
   - ${USERDATA}/metadata/homework.yaml
 filters:
   - ${USERDATA}/filters/image-row.lua
+  - ${USERDATA}/filters/table-width.lua
+  - ${USERDATA}/filters/inline-image.lua
+  - ${USERDATA}/filters/table-padding.lua
   - ${USERDATA}/filters/inline-code.lua
 
 highlight-style: tango

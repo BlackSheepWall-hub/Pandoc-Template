@@ -1,6 +1,8 @@
 -- Give standalone images a one-third-line default width and convert an
 -- explicit .image-row Div into the homework template's single-row,
--- equal-height image layout. Inline images are untouched.
+-- equal-height image layout.  The default is marked internally so table
+-- sizing can recover an image's intrinsic width without losing explicit
+-- author widths.
 
 if not FORMAT:match("latex") then
   return {}
@@ -43,6 +45,10 @@ end
 local function apply_default_image_width(image)
   if image and not image.attributes.width then
     image.attributes.width = "33%"
+    -- table-width.lua removes this automatic default inside table cells so
+    -- that the image's own rendered width can participate in column sizing.
+    -- Explicit user widths are never marked or removed.
+    image.attributes["data-homework-default-width"] = "true"
     return true
   end
   return false

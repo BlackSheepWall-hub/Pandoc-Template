@@ -60,6 +60,9 @@ inline-code-border-radius: 1pt
 inline-code-padding-x: 2pt
 inline-code-padding-y: 2pt
 
+# Inline images mixed with body text. Negative values move images downward.
+inline-image-shift: -0.20em
+
 # Figure and table captions.
 caption-font-size: small
 caption-font-family: "FandolFang-Regular"
@@ -75,7 +78,17 @@ image-row-gap-ratio: 0.04
 image-row-max-height: 60mm
 
 # Grid tables.
+table-natural-width-columns: 72
+# Long prose tokens keep this much unsplit width before emergency breakpoints
+# may be added. Mathematics remains atomic and is never split automatically.
+table-unbreakable-text-columns: 12
+table-min-readable-columns: 6
+table-overflow-policy: landscape
+table-landscape-width-columns: 112
+table-overflow-failure: error
+table-math-min-scale: 0.8
 table-rule-width: 0.35pt
 table-header-rule-gap: 1.2pt
 table-padding-x: 10pt
+table-padding-y: 3pt
 table-row-stretch: 1.30
