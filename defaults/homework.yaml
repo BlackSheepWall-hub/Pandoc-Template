@@ -15,6 +15,7 @@ filters:
   - ${USERDATA}/filters/inline-image.lua
   - ${USERDATA}/filters/table-padding.lua
   - ${USERDATA}/filters/inline-code.lua
+  - ${USERDATA}/filters/figure-defer-note.lua
 
 highlight-style: tango
 standalone: true

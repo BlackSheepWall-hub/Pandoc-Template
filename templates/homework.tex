@@ -64,6 +64,8 @@ $--
 \usepackage{hhline}
 \usepackage{xparse}
 \usepackage{caption}
+\usepackage{zref-user}
+\usepackage{zref-abspage}
 \usepackage{adjustbox}
 \usepackage{pdflscape}
 
@@ -91,6 +93,38 @@ $--
 }
 \captionsetup[figure]{name=$caption-figure-name$}
 \captionsetup[table]{name=$caption-table-name$}
+
+% A normal Pandoc figure is a LaTeX float and may move to a later page.  Each
+% figure gets a source mark and a placement mark.  Their absolute shipout page
+% numbers are compared on the next TeX pass; the visible page property is used
+% only for the reader-facing notice.  The source command always reserves one
+% small line, so showing the notice cannot itself change pagination and cause
+% the result to oscillate between TeX passes.
+\makeatletter
+\newcommand{\HomeworkDeferredFigurePlaced}[1]{%
+  \zref@labelbyprops{homework-figure-place-#1}{abspage,page}%
+}
+\newcommand{\HomeworkDeferredFigureSource}[1]{%
+  \par
+  \noindent
+  \makebox[\linewidth][c]{%
+    \zref@labelbyprops{homework-figure-source-#1}{abspage,page}%
+    {\small\CaptionLatinFont\CaptionCJKFont\strut
+      \ifnum
+        \zref@extractdefault
+          {homework-figure-place-#1}{abspage}{0}%
+        >
+        \zref@extractdefault
+          {homework-figure-source-#1}{abspage}{0}%
+        \relax
+          （下图见第\kern0pt
+          \zref[page]{homework-figure-place-#1}\kern0pt{}页）%
+      \fi
+    }%
+  }%
+  \par\nobreak
+}
+\makeatother
 
 % Explicit single-row image groups. A group consumes one figure number only
 % when it has a group caption or at least one child caption; numbered child
